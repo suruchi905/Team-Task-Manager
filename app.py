@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-import sqlite3
-import threading
 import streamlit as st
 import requests
+import sqlite3
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import threading
 import uvicorn
 
 # ================= BACKEND =================
@@ -21,7 +21,6 @@ app.add_middleware(
 conn = sqlite3.connect("database.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# TABLES
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,8 +40,6 @@ CREATE TABLE IF NOT EXISTS tasks (
 """)
 
 conn.commit()
-
-# ---------------- AUTH ----------------
 
 @app.post("/signup")
 def signup(email: str, password: str, role: str):
@@ -65,8 +62,6 @@ def login(email: str, password: str):
 
     return {"user_id": user[0], "role": user[3]}
 
-# ---------------- TASKS ----------------
-
 @app.post("/tasks")
 def create_task(title: str, assigned_to: int):
     cursor.execute(
@@ -83,10 +78,7 @@ def get_tasks(user_id: int):
         (user_id,)
     ).fetchall()
 
-    return [
-        {"id": t[0], "title": t[1], "status": t[2]}
-        for t in tasks
-    ]
+    return [{"id": t[0], "title": t[1], "status": t[2]} for t in tasks]
 
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int, status: str):
@@ -97,14 +89,13 @@ def update_task(task_id: int, status: str):
     conn.commit()
     return {"msg": "Updated"}
 
-# ================= RUN FASTAPI IN BACKGROUND =================
-
+# Run backend in background
 def run_api():
     uvicorn.run(app, host="127.0.0.1", port=8000)
 
 threading.Thread(target=run_api, daemon=True).start()
 
-# ================= FRONTEND (STREAMLIT) =================
+# ================= FRONTEND =================
 
 API = "http://127.0.0.1:8000"
 
@@ -121,13 +112,13 @@ if menu == "Signup":
     role = st.selectbox("Role", ["admin", "member"])
 
     if st.button("Signup"):
-        res = requests.post(f"{API}/signup", params={
+        r = requests.post(f"{API}/signup", params={
             "email": email,
             "password": password,
             "role": role
         })
 
-        if res.status_code == 200:
+        if r.status_code == 200:
             st.success("User created")
         else:
             st.error("Error")
@@ -140,13 +131,13 @@ if menu == "Login":
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
-        res = requests.post(f"{API}/login", params={
+        r = requests.post(f"{API}/login", params={
             "email": email,
             "password": password
         })
 
-        if res.status_code == 200:
-            data = res.json()
+        if r.status_code == 200:
+            data = r.json()
             st.session_state["user_id"] = data["user_id"]
             st.session_state["role"] = data["role"]
             st.success("Login successful")
@@ -164,7 +155,7 @@ if "user_id" in st.session_state:
 
     if role == "admin":
         title = st.text_input("Task Title")
-        assigned = st.number_input("Assign to User ID", step=1)
+        assigned = st.number_input("Assign User ID", step=1)
 
         if st.button("Create Task"):
             requests.post(f"{API}/tasks", params={
@@ -184,7 +175,7 @@ if "user_id" in st.session_state:
         new_status = st.selectbox(
             f"Update {t['id']}",
             ["Todo", "In Progress", "Done"],
-            key=t["id"]
+            key=str(t["id"])
         )
 
         if st.button(f"Update {t['id']}"):
