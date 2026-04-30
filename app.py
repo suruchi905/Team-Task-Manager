@@ -41,12 +41,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 conn.commit()
 
+# AUTH
 @app.post("/signup")
 def signup(email: str, password: str, role: str):
-    cursor.execute(
-        "INSERT INTO users (email,password,role) VALUES (?,?,?)",
-        (email, password, role)
-    )
+    cursor.execute("INSERT INTO users VALUES (NULL,?,?,?)",
+                   (email, password, role))
     conn.commit()
     return {"msg": "User created"}
 
@@ -62,12 +61,11 @@ def login(email: str, password: str):
 
     return {"user_id": user[0], "role": user[3]}
 
+# TASKS
 @app.post("/tasks")
 def create_task(title: str, assigned_to: int):
-    cursor.execute(
-        "INSERT INTO tasks (title,status,assigned_to) VALUES (?,?,?)",
-        (title, "Todo", assigned_to)
-    )
+    cursor.execute("INSERT INTO tasks VALUES (NULL,?,?,?)",
+                   (title, "Todo", assigned_to))
     conn.commit()
     return {"msg": "Task created"}
 
@@ -82,10 +80,8 @@ def get_tasks(user_id: int):
 
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int, status: str):
-    cursor.execute(
-        "UPDATE tasks SET status=? WHERE id=?",
-        (status, task_id)
-    )
+    cursor.execute("UPDATE tasks SET status=? WHERE id=?",
+                   (status, task_id))
     conn.commit()
     return {"msg": "Updated"}
 
@@ -103,48 +99,40 @@ st.title("Team Task Manager")
 
 menu = st.sidebar.selectbox("Menu", ["Login", "Signup"])
 
-# ---------------- SIGNUP ----------------
+# SIGNUP
 if menu == "Signup":
-    st.subheader("Create Account")
-
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
     role = st.selectbox("Role", ["admin", "member"])
 
     if st.button("Signup"):
-        r = requests.post(f"{API}/signup", params={
+        requests.post(f"{API}/signup", params={
             "email": email,
             "password": password,
             "role": role
         })
+        st.success("User created")
 
-        if r.status_code == 200:
-            st.success("User created")
-        else:
-            st.error("Error")
-
-# ---------------- LOGIN ----------------
+# LOGIN
 if menu == "Login":
-    st.subheader("Login")
-
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
-        r = requests.post(f"{API}/login", params={
+        res = requests.post(f"{API}/login", params={
             "email": email,
             "password": password
         })
 
-        if r.status_code == 200:
-            data = r.json()
+        if res.status_code == 200:
+            data = res.json()
             st.session_state["user_id"] = data["user_id"]
             st.session_state["role"] = data["role"]
             st.success("Login successful")
         else:
             st.error("Invalid credentials")
 
-# ---------------- DASHBOARD ----------------
+# DASHBOARD
 if "user_id" in st.session_state:
     st.subheader("Dashboard")
 
@@ -164,7 +152,7 @@ if "user_id" in st.session_state:
             })
             st.success("Task created")
 
-    st.markdown("### Your Tasks")
+    st.markdown("### Tasks")
 
     res = requests.get(f"{API}/tasks/{user_id}")
     tasks = res.json()
