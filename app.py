@@ -31,16 +31,16 @@ CREATE TABLE IF NOT EXISTS tasks (
 conn.commit()
 
 # ================= FASTAPI BACKEND =================
-app = FastAPI()
+api = FastAPI()
 
-app.add_middleware(
+api.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.post("/signup")
+@api.post("/signup")
 def signup(email: str, password: str, role: str):
     cursor.execute(
         "INSERT INTO users(email,password,role) VALUES (?,?,?)",
@@ -49,7 +49,7 @@ def signup(email: str, password: str, role: str):
     conn.commit()
     return {"msg": "User created"}
 
-@app.post("/login")
+@api.post("/login")
 def login(email: str, password: str):
     user = cursor.execute(
         "SELECT * FROM users WHERE email=? AND password=?",
@@ -61,43 +61,43 @@ def login(email: str, password: str):
 
     return {"user_id": user[0], "role": user[3]}
 
-@app.post("/tasks")
+@api.post("/tasks")
 def create_task(title: str, assigned_to: int):
     cursor.execute(
         "INSERT INTO tasks(title,status,assigned_to) VALUES (?,?,?)",
         (title, "Todo", assigned_to)
     )
     conn.commit()
-    return {"msg": "Task created"}
+    return {"msg": "created"}
 
-@app.get("/tasks/{user_id}")
+@api.get("/tasks/{user_id}")
 def get_tasks(user_id: int):
-    tasks = cursor.execute(
+    rows = cursor.execute(
         "SELECT * FROM tasks WHERE assigned_to=?",
         (user_id,)
     ).fetchall()
 
-    return [{"id": t[0], "title": t[1], "status": t[2]} for t in tasks]
+    return [{"id": r[0], "title": r[1], "status": r[2]} for r in rows]
 
-@app.put("/tasks/{task_id}")
+@api.put("/tasks/{task_id}")
 def update_task(task_id: int, status: str):
     cursor.execute(
         "UPDATE tasks SET status=? WHERE id=?",
         (status, task_id)
     )
     conn.commit()
-    return {"msg": "Updated"}
+    return {"msg": "updated"}
 
 # ================= RUN FASTAPI IN BACKGROUND =================
 def run_api():
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(api, host="127.0.0.1", port=8000)
 
 threading.Thread(target=run_api, daemon=True).start()
 
 # ================= STREAMLIT FRONTEND =================
 API = "http://127.0.0.1:8000"
 
-st.title("Team Task Manager")
+st.title("Team Task Manager (Merged App)")
 
 menu = st.sidebar.selectbox("Menu", ["Login", "Signup"])
 
@@ -142,23 +142,23 @@ if menu == "Login":
 if "user_id" in st.session_state:
     st.subheader("Dashboard")
 
-    user_id = st.session_state["user_id"]
+    uid = st.session_state["user_id"]
     role = st.session_state["role"]
 
     st.write("Role:", role)
 
     if role == "admin":
         title = st.text_input("Task Title")
-        assigned = st.number_input("Assign User ID", step=1)
+        assign = st.number_input("Assign User ID", step=1)
 
         if st.button("Create Task"):
             requests.post(API+"/tasks", params={
                 "title": title,
-                "assigned_to": assigned
+                "assigned_to": assign
             })
             st.success("Task created")
 
-    tasks = requests.get(API+f"/tasks/{user_id}").json()
+    tasks = requests.get(API+f"/tasks/{uid}").json()
 
     for t in tasks:
         st.write(f"{t['title']} → {t['status']}")
@@ -166,7 +166,7 @@ if "user_id" in st.session_state:
         new_status = st.selectbox(
             f"Update {t['id']}",
             ["Todo", "In Progress", "Done"],
-            key=t["id"]
+            key=str(t["id"])
         )
 
         if st.button(f"Update {t['id']}"):
