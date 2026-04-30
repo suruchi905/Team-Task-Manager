@@ -1,11 +1,15 @@
-BACKENED 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
+import threading
+import streamlit as st
+import requests
+import uvicorn
+
+# ================= BACKEND =================
 
 app = FastAPI()
 
-# CORS (important for frontend connection)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,14 +18,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# DATABASE
 conn = sqlite3.connect("database.db", check_same_thread=False)
 cursor = conn.cursor()
 
+# TABLES
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE,
+    email TEXT,
     password TEXT,
     role TEXT
 )
@@ -42,15 +46,12 @@ conn.commit()
 
 @app.post("/signup")
 def signup(email: str, password: str, role: str):
-    try:
-        cursor.execute(
-            "INSERT INTO users (email, password, role) VALUES (?, ?, ?)",
-            (email, password, role)
-        )
-        conn.commit()
-        return {"msg": "User created"}
-    except:
-        raise HTTPException(status_code=400, detail="User already exists")
+    cursor.execute(
+        "INSERT INTO users (email,password,role) VALUES (?,?,?)",
+        (email, password, role)
+    )
+    conn.commit()
+    return {"msg": "User created"}
 
 @app.post("/login")
 def login(email: str, password: str):
@@ -60,19 +61,16 @@ def login(email: str, password: str):
     ).fetchone()
 
     if not user:
-        raise HTTPException(status_code=400, detail="Invalid credentials")
+        raise HTTPException(400, "Invalid credentials")
 
-    return {
-        "user_id": user[0],
-        "role": user[3]
-    }
+    return {"user_id": user[0], "role": user[3]}
 
 # ---------------- TASKS ----------------
 
 @app.post("/tasks")
 def create_task(title: str, assigned_to: int):
     cursor.execute(
-        "INSERT INTO tasks (title, status, assigned_to) VALUES (?, ?, ?)",
+        "INSERT INTO tasks (title,status,assigned_to) VALUES (?,?,?)",
         (title, "Todo", assigned_to)
     )
     conn.commit()
@@ -98,9 +96,15 @@ def update_task(task_id: int, status: str):
     )
     conn.commit()
     return {"msg": "Updated"}
-  FRONTENED 
-import streamlit as st
-import requests
+
+# ================= RUN FASTAPI IN BACKGROUND =================
+
+def run_api():
+    uvicorn.run(app, host="127.0.0.1", port=8000)
+
+threading.Thread(target=run_api, daemon=True).start()
+
+# ================= FRONTEND (STREAMLIT) =================
 
 API = "http://127.0.0.1:8000"
 
@@ -117,15 +121,16 @@ if menu == "Signup":
     role = st.selectbox("Role", ["admin", "member"])
 
     if st.button("Signup"):
-        res = requests.post(
-            f"{API}/signup",
-            params={"email": email, "password": password, "role": role}
-        )
+        res = requests.post(f"{API}/signup", params={
+            "email": email,
+            "password": password,
+            "role": role
+        })
 
         if res.status_code == 200:
-            st.success("User created successfully")
+            st.success("User created")
         else:
-            st.error(res.json()["detail"])
+            st.error("Error")
 
 # ---------------- LOGIN ----------------
 if menu == "Login":
@@ -135,10 +140,10 @@ if menu == "Login":
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
-        res = requests.post(
-            f"{API}/login",
-            params={"email": email, "password": password}
-        )
+        res = requests.post(f"{API}/login", params={
+            "email": email,
+            "password": password
+        })
 
         if res.status_code == 200:
             data = res.json()
@@ -155,34 +160,31 @@ if "user_id" in st.session_state:
     user_id = st.session_state["user_id"]
     role = st.session_state["role"]
 
-    st.write("Logged in as:", role)
+    st.write("Role:", role)
 
-    # ADMIN CREATE TASK
     if role == "admin":
-        st.markdown("### Create Task")
         title = st.text_input("Task Title")
         assigned = st.number_input("Assign to User ID", step=1)
 
         if st.button("Create Task"):
-            requests.post(
-                f"{API}/tasks",
-                params={"title": title, "assigned_to": assigned}
-            )
+            requests.post(f"{API}/tasks", params={
+                "title": title,
+                "assigned_to": assigned
+            })
             st.success("Task created")
 
-    # VIEW TASKS
     st.markdown("### Your Tasks")
 
     res = requests.get(f"{API}/tasks/{user_id}")
     tasks = res.json()
 
     for t in tasks:
-        st.write(f"📌 {t['title']} → {t['status']}")
+        st.write(f"{t['title']} - {t['status']}")
 
         new_status = st.selectbox(
-            f"Update Task {t['id']}",
+            f"Update {t['id']}",
             ["Todo", "In Progress", "Done"],
-            key=f"status_{t['id']}"
+            key=t["id"]
         )
 
         if st.button(f"Update {t['id']}"):
