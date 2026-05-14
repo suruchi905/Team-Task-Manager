@@ -1,145 +1,259 @@
 import streamlit as st
-import sqlite3
+import requests
 
-# =========================
-# DB SETUP
-# =========================
-conn = sqlite3.connect("task_manager.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    password TEXT,
-    role TEXT
+# ======================================
+# APP CONFIG
+# ======================================
+st.set_page_config(
+    page_title="Team Task Manager",
+    page_icon="📌",
+    layout="centered"
 )
-""")
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT,
-    assigned_to TEXT,
-    status TEXT
-)
-""")
+# ======================================
+# API CONFIG
+# ======================================
+BASE_URL = "http://127.0.0.1:8000"
 
-conn.commit()
-
-# =========================
+# ======================================
 # SESSION STATE
-# =========================
-if "user" not in st.session_state:
-    st.session_state.user = None
+# ======================================
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
 
-# =========================
-# APP UI
-# =========================
-st.set_page_config(page_title="Team Task Manager", layout="centered")
-st.title("📌 Team Task Manager (Full Stack - Streamlit)")
+# ======================================
+# HELPER FUNCTIONS
+# ======================================
+def signup_user(username, password, role):
+    response = requests.post(
+        f"{BASE_URL}/signup",
+        json={
+            "username": username,
+            "password": password,
+            "role": role
+        }
+    )
 
-menu = st.sidebar.radio("Menu", ["Signup", "Login", "Dashboard"])
+    return response.json()
 
-# =========================
-# SIGNUP
-# =========================
+
+def login_user(username, password):
+    response = requests.post(
+        f"{BASE_URL}/login",
+        json={
+            "username": username,
+            "password": password
+        }
+    )
+
+    return response.json()
+
+
+def fetch_tasks():
+    response = requests.get(
+        f"{BASE_URL}/tasks"
+    )
+
+    return response.json()["tasks"]
+
+
+def add_task(title, assigned_to):
+    response = requests.post(
+        f"{BASE_URL}/tasks",
+        json={
+            "title": title,
+            "assigned_to": assigned_to
+        }
+    )
+
+    return response.json()
+
+
+def complete_task(task_id):
+    response = requests.put(
+        f"{BASE_URL}/tasks/{task_id}"
+    )
+
+    return response.json()
+
+
+# ======================================
+# PAGE HEADER
+# ======================================
+st.title("📌 Team Task Manager")
+
+# ======================================
+# SIDEBAR
+# ======================================
+menu = st.sidebar.radio(
+    "Navigation",
+    ["Signup", "Login", "Dashboard"]
+)
+
+# ======================================
+# SIGNUP PAGE
+# ======================================
 if menu == "Signup":
+
     st.subheader("Create Account")
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    role = st.selectbox("Role", ["Admin", "Member"])
+    username = st.text_input(
+        "Username"
+    )
 
-    if st.button("Signup"):
-        try:
-            cursor.execute(
-                "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-                (username, password, role)
+    password = st.text_input(
+        "Password",
+        type="password"
+    )
+
+    role = st.selectbox(
+        "Role",
+        ["Admin", "Member"]
+    )
+
+    if st.button("Create Account"):
+
+        if not username or not password:
+            st.warning("Please fill all fields.")
+
+        else:
+            result = signup_user(
+                username,
+                password,
+                role
             )
-            conn.commit()
-            st.success("Account created successfully!")
-        except:
-            st.error("Username already exists!")
 
-# =========================
-# LOGIN
-# =========================
+            if "message" in result:
+                st.success(result["message"])
+
+            else:
+                st.error(result["error"])
+
+
+# ======================================
+# LOGIN PAGE
+# ======================================
 elif menu == "Login":
+
     st.subheader("Login")
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    username = st.text_input(
+        "Username"
+    )
+
+    password = st.text_input(
+        "Password",
+        type="password"
+    )
 
     if st.button("Login"):
-        cursor.execute(
-            "SELECT * FROM users WHERE username=? AND password=?",
-            (username, password)
-        )
-        user = cursor.fetchone()
 
-        if user:
-            st.session_state.user = {
-                "id": user[0],
-                "username": user[1],
-                "role": user[3]
-            }
-            st.success("Login successful!")
+        if not username or not password:
+            st.warning("Enter username and password.")
+
         else:
-            st.error("Invalid credentials")
+            result = login_user(
+                username,
+                password
+            )
 
-# =========================
+            if result["success"]:
+
+                st.session_state.current_user = {
+                    "username": result["username"],
+                    "role": result["role"]
+                }
+
+                st.success("Login successful!")
+
+            else:
+                st.error("Invalid credentials")
+
+
+# ======================================
 # DASHBOARD
-# =========================
+# ======================================
 elif menu == "Dashboard":
 
-    if st.session_state.user is None:
-        st.warning("Please login first")
+    if not st.session_state.current_user:
+        st.warning("Please login first.")
         st.stop()
 
-    st.subheader(f"Welcome {st.session_state.user['username']} ({st.session_state.user['role']})")
+    user = st.session_state.current_user
 
-    # =========================
+    st.subheader(
+        f"Welcome {user['username']} 👋"
+    )
+
+    st.caption(
+        f"Role: {user['role']}"
+    )
+
+    # ==================================
     # CREATE TASK
-    # =========================
-    st.markdown("### ➕ Create Task")
+    # ==================================
+    st.markdown("## ➕ Create Task")
 
-    title = st.text_input("Task Title")
-    assigned = st.text_input("Assign To")
+    task_title = st.text_input(
+        "Task Title"
+    )
+
+    assigned_user = st.text_input(
+        "Assign To"
+    )
 
     if st.button("Add Task"):
-        if title and assigned:
-            cursor.execute(
-                "INSERT INTO tasks (title, assigned_to, status) VALUES (?, ?, ?)",
-                (title, assigned, "Pending")
-            )
-            conn.commit()
-            st.success("Task created!")
+
+        if not task_title or not assigned_user:
+            st.warning("Please fill all fields.")
+
         else:
-            st.warning("Fill all fields")
+            add_task(
+                task_title,
+                assigned_user
+            )
 
-    # =========================
+            st.success("Task created successfully!")
+
+    # ==================================
     # TASK LIST
-    # =========================
-    st.markdown("### 📋 All Tasks")
+    # ==================================
+    st.markdown("## 📋 All Tasks")
 
-    cursor.execute("SELECT * FROM tasks")
-    tasks = cursor.fetchall()
+    tasks = fetch_tasks()
 
-    for t in tasks:
-        col1, col2, col3 = st.columns([4,2,2])
+    if not tasks:
+        st.info("No tasks available.")
+
+    for task in tasks:
+
+        task_id = task[0]
+        task_title = task[1]
+        assigned_to = task[2]
+        status = task[3]
+
+        col1, col2, col3 = st.columns([4, 2, 2])
 
         with col1:
-            st.write(f"**{t[1]}** → {t[2]}")
+            st.write(
+                f"**{task_title}** → {assigned_to}"
+            )
 
         with col2:
-            st.write(t[3])
+            st.write(status)
 
         with col3:
-            if st.button("✔ Done", key=t[0]):
-                cursor.execute(
-                    "UPDATE tasks SET status='Completed' WHERE id=?",
-                    (t[0],)
-                )
-                conn.commit()
-                st.rerun()
+
+            if status != "Completed":
+
+                if st.button(
+                    "✔ Complete",
+                    key=f"complete_{task_id}"
+                ):
+
+                    complete_task(task_id)
+
+                    st.rerun()
+
+            else:
+                st.write("Done ✅")
