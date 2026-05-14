@@ -1,198 +1,231 @@
 import streamlit as st
-import requests
-from datetime import datetime
+import sqlite3
+from datetime import datetime, date
+import hashlib
 
-# =========================================================
+# =====================================================
 # PAGE CONFIG
-# =========================================================
+# =====================================================
 st.set_page_config(
     page_title="📌 Team Task Manager",
     page_icon="📌",
     layout="wide"
 )
 
-# =========================================================
-# BACKEND URL
-# =========================================================
-# IMPORTANT:
-# Replace with your REAL Railway backend URL
+# =====================================================
+# DATABASE
+# =====================================================
+conn = sqlite3.connect(
+    "team_task_manager.db",
+    check_same_thread=False
+)
 
-BASE_URL = "https://your-railway-backend.up.railway.app"
+cursor = conn.cursor()
 
-# Example:
-# BASE_URL = "https://team-task-manager-production.up.railway.app"
+# =====================================================
+# CREATE TABLES
+# =====================================================
+cursor.execute(
+    '''
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password TEXT,
+        role TEXT
+    )
+    '''
+)
 
-# =========================================================
+cursor.execute(
+    '''
+    CREATE TABLE IF NOT EXISTS projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        description TEXT,
+        created_by TEXT
+    )
+    '''
+)
+
+cursor.execute(
+    '''
+    CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        project_name TEXT,
+        assigned_to TEXT,
+        deadline TEXT,
+        status TEXT
+    )
+    '''
+)
+
+conn.commit()
+
+# =====================================================
 # SESSION STATE
-# =========================================================
+# =====================================================
 if "user" not in st.session_state:
     st.session_state.user = None
 
-# =========================================================
-# SAFE REQUEST FUNCTION
-# =========================================================
-def safe_request(method, endpoint, data=None):
+# =====================================================
+# PASSWORD HASHING
+# =====================================================
+def hash_password(password):
 
-    url = f"{BASE_URL}{endpoint}"
+    return hashlib.sha256(
+        password.encode()
+    ).hexdigest()
+
+# =====================================================
+# USER FUNCTIONS
+# =====================================================
+def signup_user(username, password, role):
 
     try:
 
-        if method == "GET":
+        hashed_password = hash_password(
+            password
+        )
 
-            response = requests.get(
-                url,
-                timeout=10
+        cursor.execute(
+            """
+            INSERT INTO users
+            (username, password, role)
+            VALUES (?, ?, ?)
+            """,
+            (
+                username,
+                hashed_password,
+                role
             )
+        )
 
-        elif method == "POST":
+        conn.commit()
 
-            response = requests.post(
-                url,
-                json=data,
-                timeout=10
-            )
+        return True, "✅ Account created successfully"
 
-        elif method == "PUT":
+    except sqlite3.IntegrityError:
 
-            response = requests.put(
-                url,
-                json=data,
-                timeout=10
-            )
+        return False, "❌ Username already exists"
 
-        else:
-
-            return {
-                "detail": "Invalid request method"
-            }
-
-        # =====================================
-        # HANDLE BAD STATUS
-        # =====================================
-        if response.status_code >= 400:
-
-            try:
-                return response.json()
-
-            except:
-                return {
-                    "detail": response.text
-                }
-
-        return response.json()
-
-    except requests.exceptions.ConnectionError:
-
-        return {
-            "detail": "❌ Backend connection failed. Check Railway deployment."
-        }
-
-    except requests.exceptions.Timeout:
-
-        return {
-            "detail": "❌ Request timeout. Backend may be sleeping."
-        }
-
-    except Exception as e:
-
-        return {
-            "detail": str(e)
-        }
-
-# =========================================================
-# API FUNCTIONS
-# =========================================================
-def signup_user(username, password, role):
-
-    return safe_request(
-        "POST",
-        "/signup",
-        {
-            "username": username,
-            "password": password,
-            "role": role
-        }
-    )
-
-
+# =====================================================
+# LOGIN
+# =====================================================
 def login_user(username, password):
 
-    return safe_request(
-        "POST",
-        "/login",
-        {
-            "username": username,
-            "password": password
-        }
+    hashed_password = hash_password(
+        password
     )
 
-
-def create_project(name, description):
-
-    return safe_request(
-        "POST",
-        "/projects",
-        {
-            "name": name,
-            "description": description
-        }
+    cursor.execute(
+        """
+        SELECT * FROM users
+        WHERE username=? AND password=?
+        """,
+        (
+            username,
+            hashed_password
+        )
     )
 
+    return cursor.fetchone()
 
-def fetch_projects():
+# =====================================================
+# PROJECT FUNCTIONS
+# =====================================================
+def create_project(name, description, created_by):
 
-    result = safe_request(
-        "GET",
-        "/projects"
+    cursor.execute(
+        """
+        INSERT INTO projects
+        (name, description, created_by)
+        VALUES (?, ?, ?)
+        """,
+        (
+            name,
+            description,
+            created_by
+        )
     )
 
-    if isinstance(result, list):
-        return result
+    conn.commit()
 
-    return []
+# =====================================================
+# GET PROJECTS
+# =====================================================
+def get_projects():
 
-
-def create_task(title, project_id, assigned_to, deadline):
-
-    return safe_request(
-        "POST",
-        "/tasks",
-        {
-            "title": title,
-            "project_id": project_id,
-            "assigned_to": assigned_to,
-            "deadline": str(deadline)
-        }
+    cursor.execute(
+        "SELECT * FROM projects"
     )
 
+    return cursor.fetchall()
 
-def fetch_tasks():
+# =====================================================
+# CREATE TASK
+# =====================================================
+def create_task(
+    title,
+    project_name,
+    assigned_to,
+    deadline
+):
 
-    result = safe_request(
-        "GET",
-        "/tasks"
+    cursor.execute(
+        """
+        INSERT INTO tasks
+        (title, project_name,
+        assigned_to, deadline, status)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            title,
+            project_name,
+            assigned_to,
+            str(deadline),
+            "Pending"
+        )
     )
 
-    if isinstance(result, list):
-        return result
+    conn.commit()
 
-    return []
+# =====================================================
+# GET TASKS
+# =====================================================
+def get_tasks():
 
-
-def update_task(task_id):
-
-    return safe_request(
-        "PUT",
-        f"/tasks/{task_id}",
-        {
-            "status": "Completed"
-        }
+    cursor.execute(
+        "SELECT * FROM tasks"
     )
 
-# =========================================================
+    return cursor.fetchall()
+
+# =====================================================
+# COMPLETE TASK
+# =====================================================
+def complete_task(task_id):
+
+    cursor.execute(
+        """
+        UPDATE tasks
+        SET status=?
+        WHERE id=?
+        """,
+        (
+            "Completed",
+            task_id
+        )
+    )
+
+    conn.commit()
+
+# =====================================================
 # SIDEBAR
-# =========================================================
-st.sidebar.title("📌 Team Task Manager")
+# =====================================================
+st.sidebar.title(
+    "📌 Team Task Manager"
+)
 
 menu = st.sidebar.radio(
     "Navigation",
@@ -203,9 +236,9 @@ menu = st.sidebar.radio(
     ]
 )
 
-# =========================================================
+# =====================================================
 # SIGNUP PAGE
-# =========================================================
+# =====================================================
 if menu == "Signup":
 
     st.title("📝 Create Account")
@@ -243,30 +276,23 @@ if menu == "Signup":
 
         else:
 
-            result = signup_user(
+            success, message = signup_user(
                 username,
                 password,
                 role
             )
 
-            if "message" in result:
+            if success:
 
-                st.success(
-                    result["message"]
-                )
+                st.success(message)
 
             else:
 
-                st.error(
-                    result.get(
-                        "detail",
-                        "Signup failed"
-                    )
-                )
+                st.error(message)
 
-# =========================================================
+# =====================================================
 # LOGIN PAGE
-# =========================================================
+# =====================================================
 elif menu == "Login":
 
     st.title("🔐 Login")
@@ -282,16 +308,17 @@ elif menu == "Login":
 
     if st.button("Login"):
 
-        result = login_user(
+        user = login_user(
             username,
             password
         )
 
-        if "token" in result:
+        if user:
 
             st.session_state.user = {
-                "username": result["username"],
-                "role": result["role"]
+                "id": user[0],
+                "username": user[1],
+                "role": user[3]
             }
 
             st.success(
@@ -303,15 +330,12 @@ elif menu == "Login":
         else:
 
             st.error(
-                result.get(
-                    "detail",
-                    "Invalid credentials"
-                )
+                "❌ Invalid username or password"
             )
 
-# =========================================================
+# =====================================================
 # DASHBOARD PAGE
-# =========================================================
+# =====================================================
 elif menu == "Dashboard":
 
     if not st.session_state.user:
@@ -334,9 +358,9 @@ elif menu == "Dashboard":
         f"Role: {user['role']}"
     )
 
-    # =====================================================
+    # =================================================
     # LOGOUT
-    # =====================================================
+    # =================================================
     if st.button("Logout"):
 
         st.session_state.user = None
@@ -345,9 +369,9 @@ elif menu == "Dashboard":
 
     st.divider()
 
-    # =====================================================
+    # =================================================
     # ADMIN SECTION
-    # =====================================================
+    # =================================================
     if user["role"] == "Admin":
 
         st.markdown(
@@ -372,25 +396,15 @@ elif menu == "Dashboard":
 
             else:
 
-                result = create_project(
+                create_project(
                     project_name,
-                    project_description
+                    project_description,
+                    user["username"]
                 )
 
-                if "message" in result:
-
-                    st.success(
-                        result["message"]
-                    )
-
-                else:
-
-                    st.error(
-                        result.get(
-                            "detail",
-                            "Project creation failed"
-                        )
-                    )
+                st.success(
+                    "✅ Project created successfully"
+                )
 
         st.divider()
 
@@ -407,24 +421,22 @@ elif menu == "Dashboard":
         )
 
         deadline = st.date_input(
-            "Deadline"
+            "Deadline",
+            min_value=date.today()
         )
 
-        projects = fetch_projects()
+        projects = get_projects()
 
-        project_map = {}
+        project_names = [
+            project[1]
+            for project in projects
+        ]
 
-        for project in projects:
-
-            project_map[
-                project["name"]
-            ] = project["id"]
-
-        if project_map:
+        if project_names:
 
             selected_project = st.selectbox(
                 "Select Project",
-                list(project_map.keys())
+                project_names
             )
 
             if st.button("Add Task"):
@@ -432,49 +444,38 @@ elif menu == "Dashboard":
                 if not task_title or not assigned_to:
 
                     st.warning(
-                        "Please fill all task fields"
+                        "Please fill all fields"
                     )
 
                 else:
 
-                    result = create_task(
+                    create_task(
                         task_title,
-                        project_map[selected_project],
+                        selected_project,
                         assigned_to,
                         deadline
                     )
 
-                    if "message" in result:
+                    st.success(
+                        "✅ Task created successfully"
+                    )
 
-                        st.success(
-                            result["message"]
-                        )
-
-                        st.rerun()
-
-                    else:
-
-                        st.error(
-                            result.get(
-                                "detail",
-                                "Task creation failed"
-                            )
-                        )
+                    st.rerun()
 
         else:
 
             st.info(
-                "No projects found. Create project first."
+                "Create a project first"
             )
 
-    # =====================================================
+    # =================================================
     # TASK LIST
-    # =====================================================
+    # =================================================
     st.markdown(
         "## 📋 All Tasks"
     )
 
-    tasks = fetch_tasks()
+    tasks = get_tasks()
 
     if not tasks:
 
@@ -484,21 +485,29 @@ elif menu == "Dashboard":
 
     else:
 
-        current_date = datetime.now()
+        current_date = datetime.now().date()
 
         for task in tasks:
+
+            task_id = task[0]
+            title = task[1]
+            project_name = task[2]
+            assigned_to = task[3]
+            deadline = task[4]
+            status = task[5]
 
             overdue = False
 
             try:
 
-                deadline_date = datetime.fromisoformat(
-                    task["deadline"]
-                )
+                deadline_date = datetime.strptime(
+                    deadline,
+                    "%Y-%m-%d"
+                ).date()
 
                 if (
                     deadline_date < current_date
-                    and task["status"] != "Completed"
+                    and status != "Completed"
                 ):
 
                     overdue = True
@@ -512,24 +521,22 @@ elif menu == "Dashboard":
 
                 with col1:
 
-                    st.subheader(
-                        task["title"]
+                    st.subheader(title)
+
+                    st.write(
+                        f"📁 Project: {project_name}"
                     )
 
                     st.write(
-                        f"📁 Project: {task['project_name']}"
+                        f"👤 Assigned To: {assigned_to}"
                     )
 
                     st.write(
-                        f"👤 Assigned To: {task['assigned_user']}"
+                        f"📌 Status: {status}"
                     )
 
                     st.write(
-                        f"📌 Status: {task['status']}"
-                    )
-
-                    st.write(
-                        f"⏰ Deadline: {task['deadline']}"
+                        f"⏰ Deadline: {deadline}"
                     )
 
                     if overdue:
@@ -540,21 +547,17 @@ elif menu == "Dashboard":
 
                 with col2:
 
-                    if task["status"] != "Completed":
+                    if status != "Completed":
 
                         if st.button(
                             "✔ Complete",
-                            key=task["id"]
+                            key=f"complete_{task_id}"
                         ):
 
-                            update_task(
-                                task["id"]
-                            )
+                            complete_task(task_id)
 
                             st.rerun()
 
                     else:
 
-                        st.success(
-                            "Done"
-                        )
+                        st.success("Done")
