@@ -2,31 +2,35 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-# =====================================================
+# =========================================================
 # PAGE CONFIG
-# =====================================================
+# =========================================================
 st.set_page_config(
     page_title="📌 Team Task Manager",
     page_icon="📌",
     layout="wide"
 )
 
-# =====================================================
-# BACKEND URL
-# =====================================================
-# Replace with your Railway backend URL after deployment
+# =========================================================
+# IMPORTANT
+# =========================================================
+# AFTER DEPLOYING FASTAPI BACKEND ON RAILWAY
+# REPLACE THIS URL WITH YOUR REAL RAILWAY URL
 
-BASE_URL = "https://your-backend-url.up.railway.app"
+BASE_URL = "https://your-project-name.up.railway.app"
 
-# =====================================================
+# Example:
+# BASE_URL = "https://team-task-manager-production.up.railway.app"
+
+# =========================================================
 # SESSION STATE
-# =====================================================
+# =========================================================
 if "user" not in st.session_state:
     st.session_state.user = None
 
-# =====================================================
+# =========================================================
 # API FUNCTIONS
-# =====================================================
+# =========================================================
 def signup_user(username, password, role):
 
     try:
@@ -180,9 +184,9 @@ def update_task(task_id):
             "detail": str(e)
         }
 
-# =====================================================
+# =========================================================
 # SIDEBAR
-# =====================================================
+# =========================================================
 st.sidebar.title("📌 Team Task Manager")
 
 menu = st.sidebar.radio(
@@ -194,9 +198,9 @@ menu = st.sidebar.radio(
     ]
 )
 
-# =====================================================
+# =========================================================
 # SIGNUP PAGE
-# =====================================================
+# =========================================================
 if menu == "Signup":
 
     st.title("📝 Create Account")
@@ -224,7 +228,9 @@ if menu == "Signup":
 
         elif len(password) < 6:
 
-            st.warning("Password must be at least 6 characters")
+            st.warning(
+                "Password must be at least 6 characters"
+            )
 
         else:
 
@@ -247,9 +253,9 @@ if menu == "Signup":
                     )
                 )
 
-# =====================================================
+# =========================================================
 # LOGIN PAGE
-# =====================================================
+# =========================================================
 elif menu == "Login":
 
     st.title("🔐 Login")
@@ -288,9 +294,9 @@ elif menu == "Login":
                 )
             )
 
-# =====================================================
+# =========================================================
 # DASHBOARD PAGE
-# =====================================================
+# =========================================================
 elif menu == "Dashboard":
 
     if not st.session_state.user:
@@ -311,9 +317,9 @@ elif menu == "Dashboard":
         f"Role: {user['role']}"
     )
 
-    # =================================================
+    # =====================================================
     # LOGOUT
-    # =================================================
+    # =====================================================
     if st.button("Logout"):
 
         st.session_state.user = None
@@ -322,9 +328,9 @@ elif menu == "Dashboard":
 
     st.divider()
 
-    # =================================================
+    # =====================================================
     # ADMIN SECTION
-    # =================================================
+    # =====================================================
     if user["role"] == "Admin":
 
         st.markdown("## 📁 Create Project")
@@ -341,7 +347,9 @@ elif menu == "Dashboard":
 
             if not project_name:
 
-                st.warning("Project name required")
+                st.warning(
+                    "Project name required"
+                )
 
             else:
 
@@ -402,7 +410,9 @@ elif menu == "Dashboard":
 
                 if not task_title or not assigned_to:
 
-                    st.warning("Fill all task fields")
+                    st.warning(
+                        "Please fill all task fields"
+                    )
 
                 else:
 
@@ -431,12 +441,12 @@ elif menu == "Dashboard":
         else:
 
             st.info(
-                "No projects available. Create project first."
+                "No projects found. Create project first."
             )
 
-    # =================================================
+    # =====================================================
     # TASK LIST
-    # =================================================
+    # =====================================================
     st.markdown("## 📋 All Tasks")
 
     tasks = fetch_tasks()
@@ -495,7 +505,9 @@ elif menu == "Dashboard":
 
                     if overdue:
 
-                        st.error("⚠️ Overdue Task")
+                        st.error(
+                            "⚠️ Overdue Task"
+                        )
 
                 with col2:
 
@@ -506,7 +518,9 @@ elif menu == "Dashboard":
                             key=task["id"]
                         ):
 
-                            update_task(task["id"])
+                            update_task(
+                                task["id"]
+                            )
 
                             st.rerun()
 
