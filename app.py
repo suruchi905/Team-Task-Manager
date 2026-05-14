@@ -12,12 +12,12 @@ st.set_page_config(
 )
 
 # =========================================================
-# IMPORTANT
+# BACKEND URL
 # =========================================================
-# AFTER DEPLOYING FASTAPI BACKEND ON RAILWAY
-# REPLACE THIS URL WITH YOUR REAL RAILWAY URL
+# IMPORTANT:
+# Replace with your REAL Railway backend URL
 
-BASE_URL = "https://your-project-name.up.railway.app"
+BASE_URL = "https://your-railway-backend.up.railway.app"
 
 # Example:
 # BASE_URL = "https://team-task-manager-production.up.railway.app"
@@ -29,160 +29,165 @@ if "user" not in st.session_state:
     st.session_state.user = None
 
 # =========================================================
+# SAFE REQUEST FUNCTION
+# =========================================================
+def safe_request(method, endpoint, data=None):
+
+    url = f"{BASE_URL}{endpoint}"
+
+    try:
+
+        if method == "GET":
+
+            response = requests.get(
+                url,
+                timeout=10
+            )
+
+        elif method == "POST":
+
+            response = requests.post(
+                url,
+                json=data,
+                timeout=10
+            )
+
+        elif method == "PUT":
+
+            response = requests.put(
+                url,
+                json=data,
+                timeout=10
+            )
+
+        else:
+
+            return {
+                "detail": "Invalid request method"
+            }
+
+        # =====================================
+        # HANDLE BAD STATUS
+        # =====================================
+        if response.status_code >= 400:
+
+            try:
+                return response.json()
+
+            except:
+                return {
+                    "detail": response.text
+                }
+
+        return response.json()
+
+    except requests.exceptions.ConnectionError:
+
+        return {
+            "detail": "❌ Backend connection failed. Check Railway deployment."
+        }
+
+    except requests.exceptions.Timeout:
+
+        return {
+            "detail": "❌ Request timeout. Backend may be sleeping."
+        }
+
+    except Exception as e:
+
+        return {
+            "detail": str(e)
+        }
+
+# =========================================================
 # API FUNCTIONS
 # =========================================================
 def signup_user(username, password, role):
 
-    try:
-
-        response = requests.post(
-            f"{BASE_URL}/signup",
-            json={
-                "username": username,
-                "password": password,
-                "role": role
-            },
-            timeout=10
-        )
-
-        return response.json()
-
-    except requests.exceptions.ConnectionError:
-
-        return {
-            "detail": "❌ Cannot connect to backend server"
+    return safe_request(
+        "POST",
+        "/signup",
+        {
+            "username": username,
+            "password": password,
+            "role": role
         }
-
-    except Exception as e:
-
-        return {
-            "detail": str(e)
-        }
+    )
 
 
 def login_user(username, password):
 
-    try:
-
-        response = requests.post(
-            f"{BASE_URL}/login",
-            json={
-                "username": username,
-                "password": password
-            },
-            timeout=10
-        )
-
-        return response.json()
-
-    except requests.exceptions.ConnectionError:
-
-        return {
-            "detail": "❌ Cannot connect to backend server"
+    return safe_request(
+        "POST",
+        "/login",
+        {
+            "username": username,
+            "password": password
         }
-
-    except Exception as e:
-
-        return {
-            "detail": str(e)
-        }
+    )
 
 
 def create_project(name, description):
 
-    try:
-
-        response = requests.post(
-            f"{BASE_URL}/projects",
-            json={
-                "name": name,
-                "description": description
-            },
-            timeout=10
-        )
-
-        return response.json()
-
-    except Exception as e:
-
-        return {
-            "detail": str(e)
+    return safe_request(
+        "POST",
+        "/projects",
+        {
+            "name": name,
+            "description": description
         }
+    )
 
 
 def fetch_projects():
 
-    try:
+    result = safe_request(
+        "GET",
+        "/projects"
+    )
 
-        response = requests.get(
-            f"{BASE_URL}/projects",
-            timeout=10
-        )
+    if isinstance(result, list):
+        return result
 
-        return response.json()
-
-    except:
-        return []
+    return []
 
 
 def create_task(title, project_id, assigned_to, deadline):
 
-    try:
-
-        response = requests.post(
-            f"{BASE_URL}/tasks",
-            json={
-                "title": title,
-                "project_id": project_id,
-                "assigned_to": assigned_to,
-                "deadline": str(deadline)
-            },
-            timeout=10
-        )
-
-        return response.json()
-
-    except Exception as e:
-
-        return {
-            "detail": str(e)
+    return safe_request(
+        "POST",
+        "/tasks",
+        {
+            "title": title,
+            "project_id": project_id,
+            "assigned_to": assigned_to,
+            "deadline": str(deadline)
         }
+    )
 
 
 def fetch_tasks():
 
-    try:
+    result = safe_request(
+        "GET",
+        "/tasks"
+    )
 
-        response = requests.get(
-            f"{BASE_URL}/tasks",
-            timeout=10
-        )
+    if isinstance(result, list):
+        return result
 
-        return response.json()
-
-    except:
-        return []
+    return []
 
 
 def update_task(task_id):
 
-    try:
-
-        response = requests.put(
-            f"{BASE_URL}/tasks/{task_id}",
-            json={
-                "status": "Completed"
-            },
-            timeout=10
-        )
-
-        return response.json()
-
-    except Exception as e:
-
-        return {
-            "detail": str(e)
+    return safe_request(
+        "PUT",
+        f"/tasks/{task_id}",
+        {
+            "status": "Completed"
         }
+    )
 
 # =========================================================
 # SIDEBAR
@@ -205,7 +210,9 @@ if menu == "Signup":
 
     st.title("📝 Create Account")
 
-    username = st.text_input("Username")
+    username = st.text_input(
+        "Username"
+    )
 
     password = st.text_input(
         "Password",
@@ -224,7 +231,9 @@ if menu == "Signup":
 
         if not username or not password:
 
-            st.warning("Please fill all fields")
+            st.warning(
+                "Please fill all fields"
+            )
 
         elif len(password) < 6:
 
@@ -242,7 +251,9 @@ if menu == "Signup":
 
             if "message" in result:
 
-                st.success(result["message"])
+                st.success(
+                    result["message"]
+                )
 
             else:
 
@@ -260,7 +271,9 @@ elif menu == "Login":
 
     st.title("🔐 Login")
 
-    username = st.text_input("Username")
+    username = st.text_input(
+        "Username"
+    )
 
     password = st.text_input(
         "Password",
@@ -281,7 +294,9 @@ elif menu == "Login":
                 "role": result["role"]
             }
 
-            st.success("✅ Login successful")
+            st.success(
+                "✅ Login successful"
+            )
 
             st.rerun()
 
@@ -301,7 +316,9 @@ elif menu == "Dashboard":
 
     if not st.session_state.user:
 
-        st.warning("Please login first")
+        st.warning(
+            "Please login first"
+        )
 
         st.stop()
 
@@ -333,7 +350,9 @@ elif menu == "Dashboard":
     # =====================================================
     if user["role"] == "Admin":
 
-        st.markdown("## 📁 Create Project")
+        st.markdown(
+            "## 📁 Create Project"
+        )
 
         project_name = st.text_input(
             "Project Name"
@@ -360,7 +379,9 @@ elif menu == "Dashboard":
 
                 if "message" in result:
 
-                    st.success(result["message"])
+                    st.success(
+                        result["message"]
+                    )
 
                 else:
 
@@ -373,7 +394,9 @@ elif menu == "Dashboard":
 
         st.divider()
 
-        st.markdown("## ➕ Create Task")
+        st.markdown(
+            "## ➕ Create Task"
+        )
 
         task_title = st.text_input(
             "Task Title"
@@ -391,13 +414,11 @@ elif menu == "Dashboard":
 
         project_map = {}
 
-        if isinstance(projects, list):
+        for project in projects:
 
-            for project in projects:
-
-                project_map[
-                    project["name"]
-                ] = project["id"]
+            project_map[
+                project["name"]
+            ] = project["id"]
 
         if project_map:
 
@@ -425,7 +446,9 @@ elif menu == "Dashboard":
 
                     if "message" in result:
 
-                        st.success(result["message"])
+                        st.success(
+                            result["message"]
+                        )
 
                         st.rerun()
 
@@ -447,13 +470,17 @@ elif menu == "Dashboard":
     # =====================================================
     # TASK LIST
     # =====================================================
-    st.markdown("## 📋 All Tasks")
+    st.markdown(
+        "## 📋 All Tasks"
+    )
 
     tasks = fetch_tasks()
 
     if not tasks:
 
-        st.info("No tasks available")
+        st.info(
+            "No tasks available"
+        )
 
     else:
 
@@ -485,7 +512,9 @@ elif menu == "Dashboard":
 
                 with col1:
 
-                    st.subheader(task["title"])
+                    st.subheader(
+                        task["title"]
+                    )
 
                     st.write(
                         f"📁 Project: {task['project_name']}"
@@ -526,4 +555,6 @@ elif menu == "Dashboard":
 
                     else:
 
-                        st.success("Done")
+                        st.success(
+                            "Done"
+                        )
