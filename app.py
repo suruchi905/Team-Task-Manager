@@ -1,3 +1,326 @@
+# Full Team Task Manager (FastAPI + Streamlit + MongoDB)
+
+## 📁 Project Structure
+
+```bash
+team-task-manager/
+│
+├── backend/
+│   ├── main.py
+│   ├── requirements.txt
+│   └── .env
+│
+├── frontend/
+│   ├── app.py
+│   └── requirements.txt
+│
+└── README.md
+```
+
+---
+
+# ==============================
+
+# BACKEND CODE
+
+# File: backend/main.py
+
+# ==============================
+
+```python
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pymongo import MongoClient
+from bson import ObjectId
+from passlib.context import CryptContext
+from jose import jwt
+from datetime import datetime, timedelta
+from pydantic import BaseModel
+from typing import Optional
+import os
+
+# ==========================================
+# APP
+# ==========================================
+app = FastAPI()
+
+# ==========================================
+# CORS
+# ==========================================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ==========================================
+# MONGODB
+# ==========================================
+MONGO_URL = "mongodb://localhost:27017"
+
+client = MongoClient(MONGO_URL)
+
+db = client["team_task_manager"]
+
+users_collection = db["users"]
+projects_collection = db["projects"]
+tasks_collection = db["tasks"]
+
+# ==========================================
+# SECURITY
+# ==========================================
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto"
+)
+
+SECRET_KEY = "SECRET123"
+ALGORITHM = "HS256"
+
+# ==========================================
+# SCHEMAS
+# ==========================================
+class SignupModel(BaseModel):
+    username: str
+    password: str
+    role: str
+
+
+class LoginModel(BaseModel):
+    username: str
+    password: str
+
+
+class ProjectModel(BaseModel):
+    name: str
+    description: Optional[str] = ""
+
+
+class TaskModel(BaseModel):
+    title: str
+    project_id: str
+    assigned_to: str
+    deadline: str
+
+
+class UpdateTaskModel(BaseModel):
+    status: str
+
+# ==========================================
+# HELPERS
+# ==========================================
+def hash_password(password):
+    return pwd_context.hash(password)
+
+
+def verify_password(plain, hashed):
+    return pwd_context.verify(plain, hashed)
+
+
+def create_token(data: dict):
+
+    payload = data.copy()
+
+    payload["exp"] = datetime.utcnow() + timedelta(days=1)
+
+    token = jwt.encode(
+        payload,
+        SECRET_KEY,
+        algorithm=ALGORITHM
+    )
+
+    return token
+
+# ==========================================
+# HOME
+# ==========================================
+@app.get("/")
+def home():
+    return {
+        "message": "Team Task Manager API Running"
+    }
+
+# ==========================================
+# SIGNUP
+# ==========================================
+@app.post("/signup")
+def signup(data: SignupModel):
+
+    existing_user = users_collection.find_one({
+        "username": data.username
+    })
+
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists"
+        )
+
+    user = {
+        "username": data.username,
+        "password": hash_password(data.password),
+        "role": data.role
+    }
+
+    users_collection.insert_one(user)
+
+    return {
+        "message": "Account created successfully"
+    }
+
+# ==========================================
+# LOGIN
+# ==========================================
+@app.post("/login")
+def login(data: LoginModel):
+
+    user = users_collection.find_one({
+        "username": data.username
+    })
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials"
+        )
+
+    if not verify_password(
+        data.password,
+        user["password"]
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials"
+        )
+
+    token = create_token({
+        "username": user["username"],
+        "role": user["role"]
+    })
+
+    return {
+        "token": token,
+        "username": user["username"],
+        "role": user["role"]
+    }
+
+# ==========================================
+# CREATE PROJECT
+# ==========================================
+@app.post("/projects")
+def create_project(data: ProjectModel):
+
+    project = {
+        "name": data.name,
+        "description": data.description
+    }
+
+    result = projects_collection.insert_one(project)
+
+    return {
+        "message": "Project created successfully",
+        "project_id": str(result.inserted_id)
+    }
+
+# ==========================================
+# GET PROJECTS
+# ==========================================
+@app.get("/projects")
+def get_projects():
+
+    projects = []
+
+    for project in projects_collection.find():
+
+        projects.append({
+            "id": str(project["_id"]),
+            "name": project["name"],
+            "description": project.get("description", "")
+        })
+
+    return projects
+
+# ==========================================
+# CREATE TASK
+# ==========================================
+@app.post("/tasks")
+def create_task(data: TaskModel):
+
+    task = {
+        "title": data.title,
+        "project_id": data.project_id,
+        "assigned_to": data.assigned_to,
+        "deadline": data.deadline,
+        "status": "Pending"
+    }
+
+    result = tasks_collection.insert_one(task)
+
+    return {
+        "message": "Task created successfully",
+        "task_id": str(result.inserted_id)
+    }
+
+# ==========================================
+# GET TASKS
+# ==========================================
+@app.get("/tasks")
+def get_tasks():
+
+    tasks = []
+
+    for task in tasks_collection.find():
+
+        project = projects_collection.find_one({
+            "_id": ObjectId(task["project_id"])
+        })
+
+        tasks.append({
+            "id": str(task["_id"]),
+            "title": task["title"],
+            "project_name": project["name"] if project else "N/A",
+            "assigned_user": task["assigned_to"],
+            "deadline": task["deadline"],
+            "status": task["status"]
+        })
+
+    return tasks
+
+# ==========================================
+# UPDATE TASK
+# ==========================================
+@app.put("/tasks/{task_id}")
+def update_task(task_id: str, data: UpdateTaskModel):
+
+    tasks_collection.update_one(
+        {
+            "_id": ObjectId(task_id)
+        },
+        {
+            "$set": {
+                "status": data.status
+            }
+        }
+    )
+
+    return {
+        "message": "Task updated successfully"
+    }
+```
+
+---
+
+# ========================================
+
+# FRONTEND CODE
+
+# File: frontend/app.py
+
+# ========================================
+
+```python
 import streamlit as st
 import requests
 from datetime import datetime
@@ -14,8 +337,7 @@ st.set_page_config(
 # =========================================
 # BACKEND URL
 # =========================================
-# Replace this with your Railway backend URL
-BASE_URL = "https://your-backend-url.up.railway.app"
+BASE_URL = "http://127.0.0.1:8000"
 
 # =========================================
 # SESSION STATE
@@ -27,146 +349,91 @@ if "user" not in st.session_state:
     st.session_state.user = None
 
 # =========================================
-# API HEADERS
-# =========================================
-def get_headers():
-    return {
-        "Authorization": f"Bearer {st.session_state.token}"
-    }
-
-# =========================================
-# AUTH APIs
+# API FUNCTIONS
 # =========================================
 def signup_user(username, password, role):
 
-    try:
-        response = requests.post(
-            f"{BASE_URL}/signup",
-            json={
-                "username": username,
-                "password": password,
-                "role": role
-            }
-        )
-
-        return response.json()
-
-    except Exception as e:
-        return {
-            "error": str(e)
+    response = requests.post(
+        f"{BASE_URL}/signup",
+        json={
+            "username": username,
+            "password": password,
+            "role": role
         }
+    )
+
+    return response.json()
 
 
 def login_user(username, password):
 
-    try:
-        response = requests.post(
-            f"{BASE_URL}/login",
-            json={
-                "username": username,
-                "password": password
-            }
-        )
-
-        return response.json()
-
-    except Exception as e:
-        return {
-            "error": str(e)
+    response = requests.post(
+        f"{BASE_URL}/login",
+        json={
+            "username": username,
+            "password": password
         }
+    )
 
-# =========================================
-# PROJECT APIs
-# =========================================
+    return response.json()
+
+
 def fetch_projects():
 
-    try:
-        response = requests.get(
-            f"{BASE_URL}/projects",
-            headers=get_headers()
-        )
+    response = requests.get(
+        f"{BASE_URL}/projects"
+    )
 
-        return response.json()
-
-    except:
-        return []
+    return response.json()
 
 
 def create_project(name, description):
 
-    try:
-        response = requests.post(
-            f"{BASE_URL}/projects",
-            headers=get_headers(),
-            json={
-                "name": name,
-                "description": description
-            }
-        )
-
-        return response.json()
-
-    except Exception as e:
-        return {
-            "error": str(e)
+    response = requests.post(
+        f"{BASE_URL}/projects",
+        json={
+            "name": name,
+            "description": description
         }
+    )
 
-# =========================================
-# TASK APIs
-# =========================================
+    return response.json()
+
+
 def fetch_tasks():
 
-    try:
-        response = requests.get(
-            f"{BASE_URL}/tasks",
-            headers=get_headers()
-        )
+    response = requests.get(
+        f"{BASE_URL}/tasks"
+    )
 
-        return response.json()
-
-    except:
-        return []
+    return response.json()
 
 
 def create_task(title, project_id, assigned_to, deadline):
 
-    try:
-        response = requests.post(
-            f"{BASE_URL}/tasks",
-            headers=get_headers(),
-            json={
-                "title": title,
-                "project_id": project_id,
-                "assigned_to": assigned_to,
-                "deadline": str(deadline)
-            }
-        )
-
-        return response.json()
-
-    except Exception as e:
-        return {
-            "error": str(e)
+    response = requests.post(
+        f"{BASE_URL}/tasks",
+        json={
+            "title": title,
+            "project_id": project_id,
+            "assigned_to": assigned_to,
+            "deadline": str(deadline)
         }
+    )
+
+    return response.json()
 
 
-def update_task_status(task_id, status):
+def update_task(task_id, status):
 
-    try:
-        response = requests.put(
-            f"{BASE_URL}/tasks/{task_id}",
-            headers=get_headers(),
-            json={
-                "status": status
-            }
-        )
-
-        return response.json()
-
-    except Exception as e:
-        return {
-            "error": str(e)
+    response = requests.put(
+        f"{BASE_URL}/tasks/{task_id}",
+        json={
+            "status": status
         }
+    )
+
+    return response.json()
 
 # =========================================
 # SIDEBAR
@@ -183,7 +450,7 @@ menu = st.sidebar.radio(
 )
 
 # =========================================
-# SIGNUP PAGE
+# SIGNUP
 # =========================================
 if menu == "Signup":
 
@@ -203,31 +470,19 @@ if menu == "Signup":
 
     if st.button("Create Account"):
 
-        if not username or not password:
-            st.warning("Please fill all fields")
+        result = signup_user(
+            username,
+            password,
+            role
+        )
 
-        elif len(password) < 6:
-            st.warning("Password must be at least 6 characters")
-
+        if "message" in result:
+            st.success(result["message"])
         else:
-
-            result = signup_user(
-                username,
-                password,
-                role
-            )
-
-            if "message" in result:
-                st.success(result["message"])
-
-            elif "detail" in result:
-                st.error(result["detail"])
-
-            else:
-                st.error(result.get("error", "Signup failed"))
+            st.error(result.get("detail", "Signup failed"))
 
 # =========================================
-# LOGIN PAGE
+# LOGIN
 # =========================================
 elif menu == "Login":
 
@@ -242,30 +497,25 @@ elif menu == "Login":
 
     if st.button("Login"):
 
-        if not username or not password:
-            st.warning("Enter username and password")
+        result = login_user(
+            username,
+            password
+        )
+
+        if "token" in result:
+
+            st.session_state.token = result["token"]
+
+            st.session_state.user = {
+                "username": result["username"],
+                "role": result["role"]
+            }
+
+            st.success("Login successful")
+            st.rerun()
 
         else:
-
-            result = login_user(
-                username,
-                password
-            )
-
-            if "token" in result:
-
-                st.session_state.token = result["token"]
-
-                st.session_state.user = {
-                    "username": result["username"],
-                    "role": result["role"]
-                }
-
-                st.success("Login successful")
-                st.rerun()
-
-            else:
-                st.error(result.get("detail", "Invalid credentials"))
+            st.error(result.get("detail", "Invalid credentials"))
 
 # =========================================
 # DASHBOARD
@@ -280,258 +530,220 @@ elif menu == "Dashboard":
 
     st.title("📊 Dashboard")
 
-    col1, col2 = st.columns([4, 1])
-
-    with col1:
-        st.subheader(f"Welcome {user['username']} 👋")
-        st.caption(f"Role: {user['role']}")
-
-    with col2:
-        if st.button("Logout"):
-            st.session_state.token = None
-            st.session_state.user = None
-            st.rerun()
-
-    st.divider()
+    st.subheader(f"Welcome {user['username']} 👋")
+    st.caption(f"Role: {user['role']}")
 
     # =====================================
-    # ADMIN CONTROLS
+    # ADMIN SECTION
     # =====================================
     if user["role"] == "Admin":
 
-        tab1, tab2 = st.tabs([
-            "📁 Create Project",
-            "➕ Create Task"
-        ])
+        st.markdown("## 📁 Create Project")
 
-        # =================================
-        # CREATE PROJECT
-        # =================================
-        with tab1:
+        project_name = st.text_input("Project Name")
 
-            st.subheader("Create New Project")
+        project_description = st.text_area(
+            "Description"
+        )
 
-            project_name = st.text_input(
-                "Project Name"
+        if st.button("Create Project"):
+
+            result = create_project(
+                project_name,
+                project_description
             )
 
-            project_description = st.text_area(
-                "Project Description"
+            st.success(result["message"])
+
+        st.divider()
+
+        st.markdown("## ➕ Create Task")
+
+        task_title = st.text_input("Task Title")
+
+        assigned_to = st.text_input(
+            "Assign To Username"
+        )
+
+        deadline = st.date_input("Deadline")
+
+        projects = fetch_projects()
+
+        project_map = {}
+
+        for project in projects:
+            project_map[
+                project["name"]
+            ] = project["id"]
+
+        if project_map:
+
+            selected_project = st.selectbox(
+                "Select Project",
+                list(project_map.keys())
             )
 
-            if st.button("Create Project"):
+            if st.button("Add Task"):
 
-                if not project_name:
-                    st.warning("Project name required")
-
-                else:
-
-                    result = create_project(
-                        project_name,
-                        project_description
-                    )
-
-                    if "message" in result:
-                        st.success(result["message"])
-                    else:
-                        st.error(result.get("detail", "Error creating project"))
-
-        # =================================
-        # CREATE TASK
-        # =================================
-        with tab2:
-
-            st.subheader("Create Task")
-
-            task_title = st.text_input(
-                "Task Title"
-            )
-
-            assigned_to = st.number_input(
-                "Assign To User ID",
-                min_value=1,
-                step=1
-            )
-
-            deadline = st.date_input(
-                "Deadline"
-            )
-
-            projects = fetch_projects()
-
-            project_options = {}
-
-            if isinstance(projects, list):
-
-                for project in projects:
-                    project_options[
-                        project["name"]
-                    ] = project["id"]
-
-            if project_options:
-
-                selected_project = st.selectbox(
-                    "Select Project",
-                    list(project_options.keys())
+                result = create_task(
+                    task_title,
+                    project_map[selected_project],
+                    assigned_to,
+                    deadline
                 )
 
-                if st.button("Add Task"):
-
-                    if not task_title:
-                        st.warning("Task title required")
-
-                    else:
-
-                        result = create_task(
-                            task_title,
-                            project_options[selected_project],
-                            assigned_to,
-                            deadline
-                        )
-
-                        if "message" in result:
-                            st.success(result["message"])
-                            st.rerun()
-                        else:
-                            st.error(result.get("detail", "Task creation failed"))
-
-            else:
-                st.info("No projects available. Create project first.")
+                st.success(result["message"])
 
     # =====================================
-    # TASK DASHBOARD
+    # TASKS
     # =====================================
-    st.markdown("## 📋 Task Dashboard")
+    st.divider()
+
+    st.markdown("## 📋 Tasks")
 
     tasks = fetch_tasks()
 
-    total_tasks = len(tasks) if isinstance(tasks, list) else 0
-
-    completed_tasks = 0
-    pending_tasks = 0
-    overdue_tasks = 0
+    if not tasks:
+        st.info("No tasks available")
 
     current_date = datetime.now()
 
-    if isinstance(tasks, list):
+    for task in tasks:
 
-        for task in tasks:
+        overdue = False
 
-            if task["status"] == "Completed":
-                completed_tasks += 1
-            else:
-                pending_tasks += 1
+        try:
 
-            if task.get("deadline"):
+            deadline_date = datetime.fromisoformat(
+                task["deadline"]
+            )
 
-                try:
-                    deadline_date = datetime.fromisoformat(
-                        task["deadline"]
-                    )
+            if (
+                deadline_date < current_date
+                and task["status"] != "Completed"
+            ):
+                overdue = True
 
-                    if deadline_date < current_date and task["status"] != "Completed":
-                        overdue_tasks += 1
+        except:
+            pass
 
-                except:
-                    pass
+        with st.container(border=True):
 
-    stat1, stat2, stat3, stat4 = st.columns(4)
+            col1, col2 = st.columns([5, 1])
 
-    with stat1:
-        st.metric("Total", total_tasks)
+            with col1:
 
-    with stat2:
-        st.metric("Completed", completed_tasks)
+                st.subheader(task["title"])
 
-    with stat3:
-        st.metric("Pending", pending_tasks)
+                st.write(
+                    f"📁 Project: {task['project_name']}"
+                )
 
-    with stat4:
-        st.metric("Overdue", overdue_tasks)
+                st.write(
+                    f"👤 Assigned To: {task['assigned_user']}"
+                )
 
-    st.divider()
+                st.write(
+                    f"📌 Status: {task['status']}"
+                )
 
-    # =====================================
-    # TASK LIST
-    # =====================================
-    st.markdown("## 🗂️ All Tasks")
+                st.write(
+                    f"⏰ Deadline: {task['deadline']}"
+                )
 
-    if not tasks:
+                if overdue:
+                    st.error("⚠️ Overdue Task")
 
-        st.info("No tasks found")
+            with col2:
 
-    else:
+                if task["status"] != "Completed":
 
-        for task in tasks:
+                    if st.button(
+                        "✔ Complete",
+                        key=task["id"]
+                    ):
 
-            overdue = False
-
-            if task.get("deadline"):
-
-                try:
-                    deadline_date = datetime.fromisoformat(
-                        task["deadline"]
-                    )
-
-                    if deadline_date < current_date and task["status"] != "Completed":
-                        overdue = True
-
-                except:
-                    pass
-
-            with st.container(border=True):
-
-                col1, col2 = st.columns([5, 1])
-
-                with col1:
-
-                    st.subheader(task["title"])
-
-                    st.write(
-                        f"📁 Project: {task.get('project_name', 'N/A')}"
-                    )
-
-                    st.write(
-                        f"👤 Assigned To: {task.get('assigned_user', 'N/A')}"
-                    )
-
-                    st.write(
-                        f"📌 Status: {task['status']}"
-                    )
-
-                    if task.get("deadline"):
-                        st.write(
-                            f"⏰ Deadline: {task['deadline']}"
+                        update_task(
+                            task["id"],
+                            "Completed"
                         )
 
-                    if overdue:
-                        st.error("⚠️ Overdue Task")
+                        st.rerun()
 
-                with col2:
+                else:
+                    st.success("Done")
+```
 
-                    if task["status"] != "Completed":
+---
 
-                        if st.button(
-                            "✔ Complete",
-                            key=f"complete_{task['id']}"
-                        ):
+# backend/requirements.txt
 
-                            result = update_task_status(
-                                task["id"],
-                                "Completed"
-                            )
+```txt
+fastapi
+uvicorn
+pymongo
+python-jose
+passlib
+bcrypt
+pydantic
+```
 
-                            if "message" in result:
-                                st.success("Task updated")
-                                st.rerun()
-                            else:
-                                st.error("Failed to update")
+---
 
-                    else:
-                        st.success("Done")
+# frontend/requirements.txt
 
-# =========================================
-# FOOTER
-# =========================================
-st.sidebar.markdown("---")
-st.sidebar.caption("Built with Streamlit + FastAPI")
+```txt
+streamlit
+requests
+```
+
+---
+
+# RUN BACKEND
+
+```bash
+uvicorn main:app --reload
+```
+
+---
+
+# RUN FRONTEND
+
+```bash
+streamlit run app.py
+```
+
+---
+
+# OPEN URLS
+
+Backend Docs:
+
+```bash
+http://127.0.0.1:8000/docs
+```
+
+Frontend:
+
+```bash
+http://localhost:8501
+```
+
+---
+
+# DEPLOYMENT
+
+## Backend
+
+Deploy backend on:
+
+* Railway
+* Render
+
+## Frontend
+
+Deploy frontend on:
+
+* Streamlit Cloud
+
+Replace frontend BASE_URL with deployed Railway backend URL.
