@@ -2,33 +2,31 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-# ==================================================
+# =====================================================
 # PAGE CONFIG
-# ==================================================
+# =====================================================
 st.set_page_config(
-    page_title="Team Task Manager",
+    page_title="📌 Team Task Manager",
     page_icon="📌",
     layout="wide"
 )
 
-# ==================================================
-# IMPORTANT
-# ==================================================
-# Replace this URL with your Railway backend URL
-# Example:
-# BASE_URL = "https://team-task-manager.up.railway.app"
+# =====================================================
+# BACKEND URL
+# =====================================================
+# Replace with your Railway backend URL after deployment
 
 BASE_URL = "https://your-backend-url.up.railway.app"
 
-# ==================================================
+# =====================================================
 # SESSION STATE
-# ==================================================
+# =====================================================
 if "user" not in st.session_state:
     st.session_state.user = None
 
-# ==================================================
-# SAFE API FUNCTIONS
-# ==================================================
+# =====================================================
+# API FUNCTIONS
+# =====================================================
 def signup_user(username, password, role):
 
     try:
@@ -48,7 +46,7 @@ def signup_user(username, password, role):
     except requests.exceptions.ConnectionError:
 
         return {
-            "detail": "❌ Cannot connect to backend server. Deploy backend on Railway first."
+            "detail": "❌ Cannot connect to backend server"
         }
 
     except Exception as e:
@@ -76,7 +74,7 @@ def login_user(username, password):
     except requests.exceptions.ConnectionError:
 
         return {
-            "detail": "❌ Cannot connect to backend server."
+            "detail": "❌ Cannot connect to backend server"
         }
 
     except Exception as e:
@@ -182,9 +180,9 @@ def update_task(task_id):
             "detail": str(e)
         }
 
-# ==================================================
+# =====================================================
 # SIDEBAR
-# ==================================================
+# =====================================================
 st.sidebar.title("📌 Team Task Manager")
 
 menu = st.sidebar.radio(
@@ -196,9 +194,9 @@ menu = st.sidebar.radio(
     ]
 )
 
-# ==================================================
+# =====================================================
 # SIGNUP PAGE
-# ==================================================
+# =====================================================
 if menu == "Signup":
 
     st.title("📝 Create Account")
@@ -249,9 +247,9 @@ if menu == "Signup":
                     )
                 )
 
-# ==================================================
+# =====================================================
 # LOGIN PAGE
-# ==================================================
+# =====================================================
 elif menu == "Login":
 
     st.title("🔐 Login")
@@ -290,9 +288,9 @@ elif menu == "Login":
                 )
             )
 
-# ==================================================
-# DASHBOARD
-# ==================================================
+# =====================================================
+# DASHBOARD PAGE
+# =====================================================
 elif menu == "Dashboard":
 
     if not st.session_state.user:
@@ -313,9 +311,9 @@ elif menu == "Dashboard":
         f"Role: {user['role']}"
     )
 
-    # ==============================================
+    # =================================================
     # LOGOUT
-    # ==============================================
+    # =================================================
     if st.button("Logout"):
 
         st.session_state.user = None
@@ -324,9 +322,9 @@ elif menu == "Dashboard":
 
     st.divider()
 
-    # ==============================================
+    # =================================================
     # ADMIN SECTION
-    # ==============================================
+    # =================================================
     if user["role"] == "Admin":
 
         st.markdown("## 📁 Create Project")
@@ -341,23 +339,29 @@ elif menu == "Dashboard":
 
         if st.button("Create Project"):
 
-            result = create_project(
-                project_name,
-                project_description
-            )
+            if not project_name:
 
-            if "message" in result:
-
-                st.success(result["message"])
+                st.warning("Project name required")
 
             else:
 
-                st.error(
-                    result.get(
-                        "detail",
-                        "Project creation failed"
-                    )
+                result = create_project(
+                    project_name,
+                    project_description
                 )
+
+                if "message" in result:
+
+                    st.success(result["message"])
+
+                else:
+
+                    st.error(
+                        result.get(
+                            "detail",
+                            "Project creation failed"
+                        )
+                    )
 
         st.divider()
 
@@ -396,37 +400,43 @@ elif menu == "Dashboard":
 
             if st.button("Add Task"):
 
-                result = create_task(
-                    task_title,
-                    project_map[selected_project],
-                    assigned_to,
-                    deadline
-                )
+                if not task_title or not assigned_to:
 
-                if "message" in result:
-
-                    st.success(result["message"])
-
-                    st.rerun()
+                    st.warning("Fill all task fields")
 
                 else:
 
-                    st.error(
-                        result.get(
-                            "detail",
-                            "Task creation failed"
-                        )
+                    result = create_task(
+                        task_title,
+                        project_map[selected_project],
+                        assigned_to,
+                        deadline
                     )
+
+                    if "message" in result:
+
+                        st.success(result["message"])
+
+                        st.rerun()
+
+                    else:
+
+                        st.error(
+                            result.get(
+                                "detail",
+                                "Task creation failed"
+                            )
+                        )
 
         else:
 
             st.info(
-                "No projects found. Create project first."
+                "No projects available. Create project first."
             )
 
-    # ==============================================
-    # TASK SECTION
-    # ==============================================
+    # =================================================
+    # TASK LIST
+    # =================================================
     st.markdown("## 📋 All Tasks")
 
     tasks = fetch_tasks()
